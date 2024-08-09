@@ -6,10 +6,7 @@ from spacy.lang.en import English
 from sentence_transformers import SentenceTransformer
 import pandas as pd
 from time import perf_counter as timer
-import csv
 import re
-import random
-
 
 """ The aim of this script is to create embeddings from your documents.
     We use an embedding model running locally on your GPU/CPU           """
@@ -29,6 +26,7 @@ EMBEDDING_MODEL = "all-mpnet-base-v2"
 DEVICE = "cuda"
 # embedding output path
 EMBEDDING_OUTPUT_PATH = "vector_store/embeddings.csv"
+
 
 def get_sentences(txt):
     sentences = list(NLP(txt).sents)
@@ -72,7 +70,7 @@ def chunking(list_of_sentences, chunk_size):
     return sentence_chunks
 
 
-def convert_to_chunck_dict(text_dict):
+def convert_to_chunk_dict(text_dict):
     extracted_chunks = []
     for item in text_dict:
         for sentence_chunk in item["sentence_chunks"]:
@@ -97,22 +95,22 @@ def create_embeddings(chunks, embedding_model):
         item["embedding"] = embedding_model.encode(item["sentence_chunk"])
 
 
-def chunk_text(extracted_data):
+def chunk_text(data, chunk_size_in_sentences):
     print("Chunking text ..")
     t1 = timer()
-    for entry in extracted_data:
-        entry["sentence_chunks"] = chunking(entry["sentences"], CHUNK_SIZE_IN_SENTENCES)
+    for entry in data:
+        entry["sentence_chunks"] = chunking(entry["sentences"], chunk_size_in_sentences)
         entry["num_chunks"] = len(entry["sentence_chunks"])
-    extracted_chunks = convert_to_chunck_dict(extracted_data)
+    extracted_chunks = convert_to_chunk_dict(data)
     t2 = timer()
     print(f"Chunking is finished, time needed: {t2 - t1:.5f} seconds")
     return extracted_chunks
 
 
-def create_embedding(chunks_df):
+def create_embedding(chunks_df, embedding_model_name, device, embedding_output_path):
     # load embedding model
-    print(f"Loading embedding model \"{EMBEDDING_MODEL}\" on {'GPU' if DEVICE=='cuda' else DEVICE}  ...")
-    embedding_model = SentenceTransformer(model_name_or_path=EMBEDDING_MODEL, device=DEVICE)
+    print(f"Loading embedding model \"{embedding_model_name}\" on {'GPU' if device == 'cuda' else device}  ...")
+    embedding_model = SentenceTransformer(model_name_or_path=embedding_model_name, device=device)
 
     # start creating the embeddings
     print("Started creating the embeddings ...")
@@ -123,21 +121,27 @@ def create_embedding(chunks_df):
 
     # save the embedding on disk
     embeddings_df = pd.DataFrame(chunks_df)
-    os.makedirs(os.path.dirname(EMBEDDING_OUTPUT_PATH), exist_ok=True)
-    embeddings_df.to_csv(EMBEDDING_OUTPUT_PATH, index=False, escapechar="\\")
-    print(f"Embeddings have been saved on disk at:  {EMBEDDING_OUTPUT_PATH}")
+    os.makedirs(os.path.dirname(embedding_output_path), exist_ok=True)
+    embeddings_df.to_csv(embedding_output_path, index=False, escapechar="\\")
+    print(f"Embeddings have been saved on disk at:  {embedding_output_path}")
+
+
+def filter_chunks(chunks, min_token_length_per_chunk):
+    chunks_df = pd.DataFrame(chunks)
+    filtered_chunks = chunks_df[chunks_df["chunk_token_count"]
+                                > min_token_length_per_chunk].to_dict(orient="records")
+    return filtered_chunks
 
 
 if __name__ == "__main__":
-
     # load & process documents
     extracted_data = read_files(DATA_DIR)
-    # chunking into groups of sentences
-    extracted_chunks = chunk_text(extracted_data)
 
-    # convert to dataframe & filter short chunks
-    extracted_chunks_df = pd.DataFrame(extracted_chunks)
-    extracted_chunks_df_filtered = extracted_chunks_df[extracted_chunks_df["chunk_token_count"]
-                                                       > MIN_TOKEN_LENGTH_PER_CHUNK].to_dict(orient="records")
-    # load embedding model & create embedding
-    create_embedding(extracted_chunks_df_filtered)
+    # chunking into groups of sentences
+    extracted_chunks = chunk_text(extracted_data, CHUNK_SIZE_IN_SENTENCES)
+
+    # filter short chunks
+    extracted_chunks_df_filtered = filter_chunks(extracted_chunks, MIN_TOKEN_LENGTH_PER_CHUNK)
+
+    # load embedding model & create embedding & save on disk
+    create_embedding(extracted_chunks_df_filtered, EMBEDDING_MODEL, DEVICE, EMBEDDING_OUTPUT_PATH)
