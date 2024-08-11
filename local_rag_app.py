@@ -3,6 +3,9 @@ import torch
 import numpy as np
 from sentence_transformers import util, SentenceTransformer
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+from transformers import TextStreamer, TextIteratorStreamer
+from threading import Thread
+import gradio as gr
 
 """ This script is to start RAG pipeline """
 
@@ -12,7 +15,7 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 EMBEDDING_MODEL = "all-mpnet-base-v2"
 NUM_OF_RELEVANT_CHUNKS = 5
 LLM_MODEL_ID = "google/gemma-2b-it"
-TEMPERATURE = 0.7
+TEMPERATURE = 0.5
 MAX_NEW_TOKENS = 512
 
 
@@ -69,7 +72,7 @@ def load_llm(model_id):
     return tokenizer, llm_model
 
 
-def prepare_augmented_prompt(query, relevant_chunks):
+def prepare_augmented_prompt(query, relevant_chunks, tokenizer):
     """
     function to better format the prompt:
     - use few-shot prompting (in context learning)
@@ -105,31 +108,45 @@ Answer:"""
 
 
 def augmented_generation(query, embedding_model, vector_store, data_index,
-                         top_k, llm_model, temperature, max_new_tokens, device):
+                         top_k, llm_model, tokenizer, temperature, max_new_tokens, device):
     # query your RAG to get relevant text
     scores, indices = rag_retrieve(query=query, embedding_model=embedding_model, vectore_store=vector_store,
                                    top_k=top_k)
     relevant_chunks = [data_index[i] for i in indices]
 
     # prepare the prompt
-    prompt = prepare_augmented_prompt(query=query, relevant_chunks=relevant_chunks)
+    prompt = prepare_augmented_prompt(query=query, relevant_chunks=relevant_chunks, tokenizer=tokenizer)
 
     # prompt the LLM
     input_ids = tokenizer(prompt, return_tensors="pt").to(device)
 
-    # Generate an output of tokens
-    outputs = llm_model.generate(**input_ids,
-                                 temperature=temperature,
-                                 do_sample=True,
-                                 max_new_tokens=max_new_tokens)
-    # decode
-    output_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    # format output
-    # output_text =
+    # for streaming the response
+    response_streamer = TextIteratorStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
 
-    generated_response = {"completion": output_text,
-                          "retrieved_chunks": relevant_chunks}
-    return generated_response
+    # Generate an output of tokens
+    generation_kwargs = dict(**input_ids, streamer=response_streamer,
+                             temperature=temperature,
+                             do_sample=True,
+                             max_new_tokens=max_new_tokens)
+
+    # for streaming we run the generation in a deference thread
+    thread = Thread(target=llm_model.generate, kwargs=generation_kwargs)
+    thread.start()
+
+    return response_streamer, relevant_chunks
+
+
+def rag_answer(query):
+    streamer, retrieved_chunks = augmented_generation(query=query, embedding_model=embedding_model,
+                                                      vector_store=embeddings, data_index=data_index,
+                                                      top_k=NUM_OF_RELEVANT_CHUNKS, llm_model=llm_model,
+                                                      tokenizer=tokenizer,
+                                                      temperature=TEMPERATURE, max_new_tokens=MAX_NEW_TOKENS,
+                                                      device=DEVICE)
+    generated_text = ""
+    for new_text in streamer:
+        generated_text += new_text
+        yield generated_text
 
 
 if __name__ == "__main__":
@@ -143,20 +160,25 @@ if __name__ == "__main__":
     # load LLM locally
     tokenizer, llm_model = load_llm(model_id=LLM_MODEL_ID)
 
-    while True:
-        query = input("\nEnter your prompt: ")
-        if query == "exit":
-            break
+    # launch gradio app
+    gr.Interface(fn=rag_answer, inputs="textbox", outputs="textbox").launch()
 
-        # The following will augment the query with relevant data
-        # chunks coming from our files, then prompt our local LLM
-        response = augmented_generation(query=query, embedding_model=embedding_model,
-                                        vector_store=embeddings, data_index=data_index,
-                                        top_k=NUM_OF_RELEVANT_CHUNKS, llm_model=llm_model,
-                                        temperature=TEMPERATURE, max_new_tokens=MAX_NEW_TOKENS, device=DEVICE)
-        print(response["completion"])
-        print("Sources:")
-        for source in response["retrieved_chunks"]:
-            print(f"File path: {source['file_path']},"
-                  f"Page: {source['page_number']}, "
-                  f"Text: {source['sentence_chunk'][:100]} .... etc")
+
+
+    # while True:
+    #     query = input("\nEnter your prompt: ")
+    #     if query == "exit":
+    #         break
+    #
+    #     # The following will augment the query with relevant data
+    #     # chunks coming from our files, then prompt our local LLM
+    #     response = augmented_generation(query=query, embedding_model=embedding_model,
+    #                                     vector_store=embeddings, data_index=data_index,
+    #                                     top_k=NUM_OF_RELEVANT_CHUNKS, llm_model=llm_model, tokenizer=tokenizer,
+    #                                     temperature=TEMPERATURE, max_new_tokens=MAX_NEW_TOKENS, device=DEVICE)
+    #     print(response["completion"])
+    #     print("Sources:")
+    #     for source in response["retrieved_chunks"]:
+    #         print(f"File path: {source['file_path']},"
+    #               f"Page: {source['page_number']}, "
+    #               f"Text: {source['sentence_chunk'][:100]} .... etc")
