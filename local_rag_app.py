@@ -14,8 +14,9 @@ VECTOR_STORE_PATH = "vector_store/embeddings.csv"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 EMBEDDING_MODEL = "all-mpnet-base-v2"
 NUM_OF_RELEVANT_CHUNKS = 5
+SIMILARITY_THRESHOLD = 0.3
 LLM_MODEL_ID = "google/gemma-2b-it"
-TEMPERATURE = 0.5
+TEMPERATURE = 0.4
 MAX_NEW_TOKENS = 512
 
 
@@ -84,18 +85,18 @@ def prepare_augmented_prompt(query, relevant_chunks, tokenizer):
     chunks = " -" + "\n -".join(chunks)
 
     # few-shot prompting
-    base_prompt = """Based on the following context items, please answer the query. Give yourself room to think by extracting relevant passages from the context before answering the query. Don't return the thinking, only return the answer. Make sure your answers are as explanatory as possible. Use the following examples as a reference for the ideal answer style.
-\nExample 1:
-Query: What is the role of backpropagation in neural networks?
-Answer: Backpropagation is a key algorithm used for training neural networks by minimizing the error between predicted and actual outputs. It involves a forward pass where the input data is propagated through the network to generate an output, and a backward pass where the error is propagated back through the network to update the weights. This is done using the gradient descent optimization method, which calculates the gradient of the loss function with respect to each weight and adjusts the weights to reduce the error. Backpropagation allows neural networks to learn complex patterns in data by iteratively improving the model's accuracy.
-\nExample 2:
-Query: How does a convolutional neural network (CNN) process image data?
-Answer:  A convolutional neural network (CNN) processes image data by applying a series of convolutional layers that automatically detect and learn features such as edges, textures, and shapes. Each convolutional layer consists of filters (also known as kernels) that slide over the input image, performing element-wise multiplication and summing the results to produce feature maps. These feature maps are then passed through activation functions (like ReLU) and pooling layers to reduce dimensionality while retaining essential features. As the data moves through deeper layers, the CNN captures increasingly abstract and complex patterns, ultimately enabling the model to recognize objects and patterns within the image. CNNs are particularly effective for tasks such as image classification, object detection, and facial recognition due to their ability to learn spatial hierarchies of features.
-\nNow use the following context items to answer the user query:
-{context}
-\nRelevant passages: <extract relevant passages from the context here>
-\nUser query: {query}
-Answer:"""
+    base_prompt = """Based on the following context items, please answer the query.
+     Don't return the thinking, only return the answer.
+     Make sure your answers are as explanatory as possible.
+     Use the following example as a reference for the ideal answer style.
+     \nExample 1:
+     Query: What is the role of backpropagation in neural networks?
+     Answer: Backpropagation is a key algorithm used for training neural networks by minimizing the error between predicted and actual outputs. It involves a forward pass where the input data is propagated through the network to generate an output, and a backward pass where the error is propagated back through the network to update the weights. This is done using the gradient descent optimization method, which calculates the gradient of the loss function with respect to each weight and adjusts the weights to reduce the error. Backpropagation allows neural networks to learn complex patterns in data by iteratively improving the model's accuracy.
+     \nNow use the following context items to answer the user query:
+     {context}
+     \nRelevant passages: <extract relevant passages from the context here>
+     \nUser query: {query}
+     Answer:"""
 
     # Add relevant chunks
     base_prompt = base_prompt.format(context=chunks, query=query)
@@ -108,11 +109,14 @@ Answer:"""
 
 
 def augmented_generation(query, embedding_model, vector_store, data_index,
-                         top_k, llm_model, tokenizer, temperature, max_new_tokens, device):
+                         top_k, similarity_threshold, llm_model, tokenizer, temperature, max_new_tokens, device):
     # query your RAG to get relevant text
     scores, indices = rag_retrieve(query=query, embedding_model=embedding_model, vectore_store=vector_store,
                                    top_k=top_k)
-    relevant_chunks = [data_index[i] for i in indices]
+
+    # only keep chunks with scores higher than the similarity threshold
+    filtered_indices = [index for score, index in zip(scores, indices) if score > similarity_threshold]
+    relevant_chunks = [data_index[i] for i in filtered_indices]
 
     # prepare the prompt
     prompt = prepare_augmented_prompt(query=query, relevant_chunks=relevant_chunks, tokenizer=tokenizer)
@@ -129,24 +133,87 @@ def augmented_generation(query, embedding_model, vector_store, data_index,
                              do_sample=True,
                              max_new_tokens=max_new_tokens)
 
-    # for streaming we run the generation in a deference thread
+    # for streaming we run the generation in a different thread
     thread = Thread(target=llm_model.generate, kwargs=generation_kwargs)
     thread.start()
 
-    return response_streamer, relevant_chunks
+    # join retrieved resources in one text
+    retrieved_resources = ""
+    for i, source in enumerate(relevant_chunks):
+        retrieved_resources += (f"Resource {i + 1}: \n"
+                                f"File path: {source['file_path']} \n"
+                                f"Page: {source['page_number']} \n"
+                                f"Text: {source['sentence_chunk'][:200]} .... etc\n\n")
+    if not retrieved_resources:
+        retrieved_resources = "No resources found for your query!"
+    return response_streamer, retrieved_resources
 
 
 def rag_answer(query):
-    streamer, retrieved_chunks = augmented_generation(query=query, embedding_model=embedding_model,
-                                                      vector_store=embeddings, data_index=data_index,
-                                                      top_k=NUM_OF_RELEVANT_CHUNKS, llm_model=llm_model,
-                                                      tokenizer=tokenizer,
-                                                      temperature=TEMPERATURE, max_new_tokens=MAX_NEW_TOKENS,
-                                                      device=DEVICE)
+    # Clear GPU cache before generation
+    torch.cuda.empty_cache()
+    streamer, retrieved_resources = augmented_generation(query=query, embedding_model=embedding_model,
+                                                         vector_store=embeddings, data_index=data_index,
+                                                         top_k=NUM_OF_RELEVANT_CHUNKS,
+                                                         similarity_threshold=SIMILARITY_THRESHOLD,
+                                                         llm_model=llm_model,
+                                                         tokenizer=tokenizer,
+                                                         temperature=TEMPERATURE, max_new_tokens=MAX_NEW_TOKENS,
+                                                         device=DEVICE)
     generated_text = ""
     for new_text in streamer:
         generated_text += new_text
-        yield generated_text
+        yield generated_text, retrieved_resources
+
+
+def gradio_blocks():
+    with gr.Blocks() as demo:
+        # Title
+        gr.Markdown("# <center> Chat With Your Data! </center>")
+        # description
+        gr.Markdown("#### Ask your documents using my local Retrieval-Augmented Generation (RAG) pipeline.")
+
+        # Input section
+        with gr.Row():
+            user_input = gr.Textbox(label="Ask and get answer from your data:")
+
+        # Output section
+        with gr.Row():
+            with gr.Accordion('Generated answer:', open=True):
+                generated_answer_output = gr.Markdown()
+
+            retrieved_resources_output = gr.Textbox(label="Retrieved resources:")
+
+        # Button section
+        with gr.Row():
+            submit_button = gr.Button("Submit")
+            clear_button = gr.Button("Clear")
+
+        # Set the function to be called when the submit button is clicked
+        submit_button.click(
+            fn=rag_answer,
+            inputs=user_input,
+            outputs=[generated_answer_output, retrieved_resources_output]
+        )
+
+        # Set the function to be called when the clear button is clicked
+        clear_button.click(
+            fn=lambda: ("", ""),
+            inputs=[],
+            outputs=[generated_answer_output, retrieved_resources_output]
+        )
+        clear_button.click(
+            fn=lambda: "",
+            inputs=[],
+            outputs=user_input  # Clears the input box
+        )
+        # Make Enter key hit the submit button
+        user_input.submit(
+            fn=rag_answer,
+            inputs=user_input,
+            outputs=[generated_answer_output, retrieved_resources_output]
+        )
+    return demo
 
 
 if __name__ == "__main__":
@@ -160,25 +227,6 @@ if __name__ == "__main__":
     # load LLM locally
     tokenizer, llm_model = load_llm(model_id=LLM_MODEL_ID)
 
-    # launch gradio app
-    gr.Interface(fn=rag_answer, inputs="textbox", outputs="textbox").launch()
-
-
-
-    # while True:
-    #     query = input("\nEnter your prompt: ")
-    #     if query == "exit":
-    #         break
-    #
-    #     # The following will augment the query with relevant data
-    #     # chunks coming from our files, then prompt our local LLM
-    #     response = augmented_generation(query=query, embedding_model=embedding_model,
-    #                                     vector_store=embeddings, data_index=data_index,
-    #                                     top_k=NUM_OF_RELEVANT_CHUNKS, llm_model=llm_model, tokenizer=tokenizer,
-    #                                     temperature=TEMPERATURE, max_new_tokens=MAX_NEW_TOKENS, device=DEVICE)
-    #     print(response["completion"])
-    #     print("Sources:")
-    #     for source in response["retrieved_chunks"]:
-    #         print(f"File path: {source['file_path']},"
-    #               f"Page: {source['page_number']}, "
-    #               f"Text: {source['sentence_chunk'][:100]} .... etc")
+    # Launch the app
+    demo = gradio_blocks()
+    demo.launch()

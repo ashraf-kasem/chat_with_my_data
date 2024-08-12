@@ -1,9 +1,13 @@
 import os
 import glob
 import fitz
+os.environ["TQDM_DISABLE"] = "1"
 from tqdm import tqdm
 from spacy.lang.en import English
 from sentence_transformers import SentenceTransformer
+import spacy
+from spacy_cleaner import processing, Cleaner
+from spacy_cleaner.processing import removers
 import pandas as pd
 from time import perf_counter as timer
 import re
@@ -13,11 +17,8 @@ import re
 
 # set the path to your data directory
 DATA_DIR = 'data/'
-# Add a sentencizer pipeline
-NLP = English()
-NLP.add_pipe("sentencizer")
 # Define split size to turn groups of sentences into chunks
-CHUNK_SIZE_IN_SENTENCES = 5
+CHUNK_SIZE_IN_SENTENCES = 6
 # define the min number of tokens in a chunk (the rest will be filtered)
 MIN_TOKEN_LENGTH_PER_CHUNK = 30
 # embedding model
@@ -26,6 +27,21 @@ EMBEDDING_MODEL = "all-mpnet-base-v2"
 DEVICE = "cuda"
 # embedding output path
 EMBEDDING_OUTPUT_PATH = "vector_store/embeddings.csv"
+
+
+# Add a sentencizer pipeline & cleaner
+NLP = English()
+NLP.add_pipe("sentencizer")
+model = spacy.load("en_core_web_sm")
+cleaner_pipeline = Cleaner(
+    model,
+    removers.remove_url_token,
+    removers.remove_email_token)
+
+
+def clean_text(text):
+    cleaned_text = cleaner_pipeline.clean(text)
+    return cleaned_text
 
 
 def get_sentences(txt):
@@ -48,7 +64,7 @@ def read_files(data_dir):
             # get the raw text of each page
             txt = page.get_text()
             # do some cleaning
-            cleaned_text = txt.replace("\n", " ").strip()
+            cleaned_text = clean_text([txt])[0]
             sentences = get_sentences(cleaned_text)
             entry = {"file_path": file,
                      "page_number": page_num,
