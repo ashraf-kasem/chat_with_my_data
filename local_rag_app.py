@@ -3,9 +3,9 @@ import torch
 import numpy as np
 from sentence_transformers import util, SentenceTransformer
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
-from transformers import TextStreamer, TextIteratorStreamer
+from transformers import TextIteratorStreamer
 from threading import Thread
-import gradio as gr
+import gradio_utils
 
 """ This script is to start RAG pipeline """
 
@@ -98,6 +98,18 @@ def prepare_augmented_prompt(query, relevant_chunks, tokenizer):
      \nUser query: {query}
      Answer:"""
 
+    # base_prompt = (
+    #     "You are an assistant for question-answering tasks. "
+    #     "Use the following pieces of retrieved context to answer "
+    #     "the question. If you don't know the answer, say that you "
+    #     "don't know. Use three sentences maximum and keep the "
+    #     "answer concise."
+    #     "\n\n"
+    #     "{context}"
+    #     "\nUser query: {query}"
+    #     "Answer:"
+    # )
+
     # Add relevant chunks
     base_prompt = base_prompt.format(context=chunks, query=query)
     # final prompt, suited for instruction-tuned models
@@ -166,56 +178,6 @@ def rag_answer(query):
         yield generated_text, retrieved_resources
 
 
-def gradio_blocks():
-    with gr.Blocks() as demo:
-        # Title
-        gr.Markdown("# <center> Chat With Your Data! </center>")
-        # description
-        gr.Markdown("#### Ask your documents using my local Retrieval-Augmented Generation (RAG) pipeline.")
-
-        # Input section
-        with gr.Row():
-            user_input = gr.Textbox(label="Ask and get answer from your data:")
-
-        # Output section
-        with gr.Row():
-            with gr.Accordion('Generated answer:', open=True):
-                generated_answer_output = gr.Markdown()
-
-            retrieved_resources_output = gr.Textbox(label="Retrieved resources:")
-
-        # Button section
-        with gr.Row():
-            submit_button = gr.Button("Submit")
-            clear_button = gr.Button("Clear")
-
-        # Set the function to be called when the submit button is clicked
-        submit_button.click(
-            fn=rag_answer,
-            inputs=user_input,
-            outputs=[generated_answer_output, retrieved_resources_output]
-        )
-
-        # Set the function to be called when the clear button is clicked
-        clear_button.click(
-            fn=lambda: ("", ""),
-            inputs=[],
-            outputs=[generated_answer_output, retrieved_resources_output]
-        )
-        clear_button.click(
-            fn=lambda: "",
-            inputs=[],
-            outputs=user_input  # Clears the input box
-        )
-        # Make Enter key hit the submit button
-        user_input.submit(
-            fn=rag_answer,
-            inputs=user_input,
-            outputs=[generated_answer_output, retrieved_resources_output]
-        )
-    return demo
-
-
 if __name__ == "__main__":
     # load the vector-store
     embeddings, data_index = load_vector_store(VECTOR_STORE_PATH, DEVICE)
@@ -228,5 +190,8 @@ if __name__ == "__main__":
     tokenizer, llm_model = load_llm(model_id=LLM_MODEL_ID)
 
     # Launch the app
-    demo = gradio_blocks()
+    demo = gradio_utils.gradio_rag_blocks(title="Chat With Your Data!",
+                                          description="Ask your documents using my local " \
+                                                      "Retrieval-Augmented Generation (RAG) pipeline.",
+                                          submit_fun=rag_answer)
     demo.launch()

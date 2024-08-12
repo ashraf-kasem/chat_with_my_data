@@ -16,3 +16,8 @@ wheel
 spacy
 gradio
 spacy-cleaner
+langchain_community
+langchain-openai
+pypdf
+chromadb
+langchain-chroma
