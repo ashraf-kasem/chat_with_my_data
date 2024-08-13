@@ -9,7 +9,7 @@ This project aims to build a RAG pipeline for answering questions from a punch o
 <br/>
 <center> 
 <img src="readme_images/my_rag_chart.png">
-![local_rag_demo](https://github.com/user-attachments/assets/1475d522-cbfc-440b-bc81-c686552938b2)
+![](https://github.com/chat_with_my_data/readme_images/local_rag_demo.gif)
 </center>
 <br/>
 
