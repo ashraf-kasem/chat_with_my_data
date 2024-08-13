@@ -5,8 +5,10 @@ This project aims to build a RAG pipeline for answering questions from a punch o
 2. LangChain RAG pipeline using OpenAI's API
 
 ### 1) Local RAG:
-
 <br/>
+
+#### Demo
+
 <center> 
 <img src="readme_images/local_rag_demo.gif">
 </center>
@@ -16,7 +18,6 @@ This project aims to build a RAG pipeline for answering questions from a punch o
 
 #### Architecture
 
-<br/>
 <center> 
 <img src="readme_images/my_rag_chart.png">
 </center>
@@ -25,3 +26,13 @@ This project aims to build a RAG pipeline for answering questions from a punch o
 
 
 ### 2) LangChain RAG:
+<br/>
+
+#### Demo
+
+<center> 
+<img src="readme_images/langchain_rag.gif">
+</center>
+<br/>
+<br/>
+<br/>

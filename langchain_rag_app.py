@@ -12,13 +12,14 @@ from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
 import gradio_utils
+import gradio as gr
 
 # global variables
 # VECTOR_STORE_PATH = ""
 # EMBEDDING_MODEL = ""
 # NUM_OF_RELEVANT_CHUNKS = 3
 # LLM_MODEL_ID = ""
-TEMPERATURE = 0.4
+TEMPERATURE = 0.1
 MAX_NEW_TOKENS = 512
 
 
@@ -98,8 +99,11 @@ if __name__ == "__main__":
     rag_chain = create_retrieval_chain(retriever, question_answer_chain)
 
     # Launch the app
-    demo = gradio_utils.gradio_rag_blocks(title="Chat With Your Data!",
+    #  gr.themes.Base() gr.themes.Default() gr.themes.Glass() gr.themes.Monochrome() gr.themes.Soft()
+    theme = gr.themes.Monochrome()
+    demo = gradio_utils.gradio_rag_blocks(title="Chat With Your Data! (LangChain)",
                                           description="Ask your documents using langchain (RAG) pipeline through " \
                                                       "OpenAI's API.",
-                                          submit_fun=langchain_rag_answer)
+                                          submit_fun=langchain_rag_answer,
+                                          theme=theme)
     demo.launch()

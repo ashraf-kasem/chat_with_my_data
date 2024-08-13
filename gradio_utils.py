@@ -1,8 +1,8 @@
 import gradio as gr
 
 
-def gradio_rag_blocks(title, description, submit_fun):
-    with gr.Blocks() as demo:
+def gradio_rag_blocks(title, description, submit_fun, theme):
+    with gr.Blocks(theme=theme) as demo:
         # Title
         gr.Markdown(f"# <center> {title} </center>")
         # description

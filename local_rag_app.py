@@ -6,6 +6,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 from transformers import TextIteratorStreamer
 from threading import Thread
 import gradio_utils
+import gradio as gr
 
 """ This script is to start RAG pipeline """
 
@@ -190,8 +191,10 @@ if __name__ == "__main__":
     tokenizer, llm_model = load_llm(model_id=LLM_MODEL_ID)
 
     # Launch the app
+    theme = gr.themes.Default()
     demo = gradio_utils.gradio_rag_blocks(title="Chat With Your Data!",
                                           description="Ask your documents using my local " \
                                                       "Retrieval-Augmented Generation (RAG) pipeline.",
-                                          submit_fun=rag_answer)
+                                          submit_fun=rag_answer,
+                                          theme=theme)
     demo.launch()
