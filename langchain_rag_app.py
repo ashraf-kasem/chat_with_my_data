@@ -14,10 +14,10 @@ from langchain_core.prompts import ChatPromptTemplate
 import gradio_utils
 
 # global variables
-VECTOR_STORE_PATH = "vector_store/embeddings.csv"
-EMBEDDING_MODEL = "all-mpnet-base-v2"
-NUM_OF_RELEVANT_CHUNKS = 3
-LLM_MODEL_ID = "google/gemma-2b-it"
+# VECTOR_STORE_PATH = ""
+# EMBEDDING_MODEL = ""
+# NUM_OF_RELEVANT_CHUNKS = 3
+# LLM_MODEL_ID = ""
 TEMPERATURE = 0.4
 MAX_NEW_TOKENS = 512
 
