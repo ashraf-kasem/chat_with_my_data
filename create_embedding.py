@@ -105,12 +105,6 @@ def convert_to_chunk_dict(text_dict):
     return extracted_chunks
 
 
-def create_embeddings(chunks, embedding_model):
-    # Embed each chunk one by one
-    for item in tqdm(chunks):
-        item["embedding"] = embedding_model.encode(item["sentence_chunk"])
-
-
 def chunk_text(data, chunk_size_in_sentences):
     print("Chunking text ..")
     t1 = timer()
@@ -123,7 +117,7 @@ def chunk_text(data, chunk_size_in_sentences):
     return extracted_chunks
 
 
-def create_embedding(chunks_df, embedding_model_name, device, embedding_output_path):
+def create_embeddings(chunks_df, embedding_model_name, device, embedding_output_path):
     # load embedding model
     print(f"Loading embedding model \"{embedding_model_name}\" on {'GPU' if device == 'cuda' else device}  ...")
     embedding_model = SentenceTransformer(model_name_or_path=embedding_model_name, device=device)
@@ -131,7 +125,8 @@ def create_embedding(chunks_df, embedding_model_name, device, embedding_output_p
     # start creating the embeddings
     print("Started creating the embeddings ...")
     t1 = timer()
-    create_embeddings(chunks_df, embedding_model)
+    for item in tqdm(chunks_df):
+        item["embedding"] = embedding_model.encode(item["sentence_chunk"])
     t2 = timer()
     print(f"Creating the embeddings is finished, time needed: {t2 - t1:.5f} seconds")
 
@@ -160,4 +155,4 @@ if __name__ == "__main__":
     extracted_chunks_df_filtered = filter_chunks(extracted_chunks, MIN_TOKEN_LENGTH_PER_CHUNK)
 
     # load embedding model & create embedding & save on disk
-    create_embedding(extracted_chunks_df_filtered, EMBEDDING_MODEL, DEVICE, EMBEDDING_OUTPUT_PATH)
+    create_embeddings(extracted_chunks_df_filtered, EMBEDDING_MODEL, DEVICE, EMBEDDING_OUTPUT_PATH)

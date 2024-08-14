@@ -99,17 +99,6 @@ def prepare_augmented_prompt(query, relevant_chunks, tokenizer):
      \nUser query: {query}
      Answer:"""
 
-    # base_prompt = (
-    #     "You are an assistant for question-answering tasks. "
-    #     "Use the following pieces of retrieved context to answer "
-    #     "the question. If you don't know the answer, say that you "
-    #     "don't know."
-    #     "\n\n"
-    #     "{context}"
-    #     "\nUser query: {query}"
-    #     "Answer:"
-    # )
-
     # Add relevant chunks
     base_prompt = base_prompt.format(context=chunks, query=query)
     # final prompt, suited for instruction-tuned models
