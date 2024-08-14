@@ -36,3 +36,12 @@ This project aims to build a RAG pipeline for answering questions from a punch o
 <br/>
 <br/>
 <br/>
+
+
+#### Architecture
+
+<center> 
+<img src="readme_images/langchain_rag_chart.png">
+</center>
+<br/>
+<br/>

@@ -5,7 +5,7 @@ from sentence_transformers import util, SentenceTransformer
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 from transformers import TextIteratorStreamer
 from threading import Thread
-import gradio_utils
+import utils
 import gradio as gr
 
 """ This script is to start RAG pipeline """
@@ -103,8 +103,7 @@ def prepare_augmented_prompt(query, relevant_chunks, tokenizer):
     #     "You are an assistant for question-answering tasks. "
     #     "Use the following pieces of retrieved context to answer "
     #     "the question. If you don't know the answer, say that you "
-    #     "don't know. Use three sentences maximum and keep the "
-    #     "answer concise."
+    #     "don't know."
     #     "\n\n"
     #     "{context}"
     #     "\nUser query: {query}"
@@ -155,8 +154,7 @@ def augmented_generation(query, embedding_model, vector_store, data_index,
     for i, source in enumerate(relevant_chunks):
         retrieved_resources += (f"Resource {i + 1}: \n"
                                 f"File path: {source['file_path']} \n"
-                                f"Page: {source['page_number']} \n"
-                                f"Text: {source['sentence_chunk'][:200]} .... etc\n\n")
+                                f"Page: {source['page_number']} \n\n")
     if not retrieved_resources:
         retrieved_resources = "No resources found for your query!"
     return response_streamer, retrieved_resources
@@ -192,9 +190,10 @@ if __name__ == "__main__":
 
     # Launch the app
     theme = gr.themes.Default()
-    demo = gradio_utils.gradio_rag_blocks(title="Chat With Your Data!",
+    demo = utils.gradio_rag_blocks(title="Chat With Your Data! (Local GPU)",
                                           description="Ask your documents using my local " \
                                                       "Retrieval-Augmented Generation (RAG) pipeline.",
                                           submit_fun=rag_answer,
                                           theme=theme)
-    demo.launch()
+    free_port = utils.get_free_port()
+    demo.launch(server_port=free_port)

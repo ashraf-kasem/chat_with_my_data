@@ -1,3 +1,4 @@
+import os.path
 import warnings
 from pydantic import PydanticDeprecatedSince20
 
@@ -11,14 +12,16 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
-import gradio_utils
+import utils
 import gradio as gr
 
 # global variables
-# VECTOR_STORE_PATH = ""
-# EMBEDDING_MODEL = ""
-# NUM_OF_RELEVANT_CHUNKS = 3
-# LLM_MODEL_ID = ""
+DATA_DIR = 'data/'
+CHUNK_SIZE_IN_CHAR = 1000
+VECTOR_STORE_PATH = "vector_store/chroma_db"
+EMBEDDING_MODEL = "text-embedding-3-small"
+NUM_OF_RELEVANT_CHUNKS = 3
+LLM_MODEL_ID = "gpt-4o-mini"
 TEMPERATURE = 0.1
 MAX_NEW_TOKENS = 512
 
@@ -51,31 +54,29 @@ def langchain_rag_answer(query):
 
 if __name__ == "__main__":
     # load the documents
-    directory_path = "data/"
-    loader = PyPDFDirectoryLoader(directory_path)
+    loader = PyPDFDirectoryLoader(DATA_DIR)
     docs = loader.load()
 
     # Document Chunking, Create Embedding,  Build vector-store
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE_IN_CHAR,chunk_overlap=200)
     splits = text_splitter.split_documents(docs)
-    vectorstore = Chroma.from_documents(documents=splits, embedding=OpenAIEmbeddings(model="text-embedding-3-small"))
-    retriever = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 3})
+
+    # create and save to disk
+    if not os.path.exists(VECTOR_STORE_PATH):
+        vectorstore = Chroma.from_documents(documents=splits,
+                                            embedding=OpenAIEmbeddings(model=EMBEDDING_MODEL),
+                                            persist_directory=VECTOR_STORE_PATH)
+    # or load from disk
+    else:
+        vectorstore = Chroma(persist_directory=VECTOR_STORE_PATH,
+                             embedding_function=OpenAIEmbeddings(model=EMBEDDING_MODEL))
+    retriever = vectorstore.as_retriever(search_type="similarity",
+                                         search_kwargs={"k": NUM_OF_RELEVANT_CHUNKS})
 
     # load OpenAI LLM API
-    llm_gpt4o_mini = ChatOpenAI(model_name="gpt-4o-mini",
+    llm_gpt4o_mini = ChatOpenAI(model_name=LLM_MODEL_ID,
                                 max_tokens=MAX_NEW_TOKENS,
                                 temperature=TEMPERATURE)
-
-    # create the prompt template
-    # system_prompt = (
-    #     "You are an assistant for question-answering tasks. "
-    #     "Use the following pieces of retrieved context to answer "
-    #     "the question. If you don't know the answer, say that you "
-    #     "don't know. Use three sentences maximum and keep the "
-    #     "answer concise."
-    #     "\n\n"
-    #     "{context}"
-    # )
 
     system_prompt = """Based on the following context items, please answer the query.
      Don't return the thinking, only return the answer.
@@ -101,9 +102,10 @@ if __name__ == "__main__":
     # Launch the app
     #  gr.themes.Base() gr.themes.Default() gr.themes.Glass() gr.themes.Monochrome() gr.themes.Soft()
     theme = gr.themes.Monochrome()
-    demo = gradio_utils.gradio_rag_blocks(title="Chat With Your Data! (LangChain)",
-                                          description="Ask your documents using langchain (RAG) pipeline through " \
-                                                      "OpenAI's API.",
-                                          submit_fun=langchain_rag_answer,
-                                          theme=theme)
-    demo.launch()
+    demo = utils.gradio_rag_blocks(title="Chat With Your Data! (LangChain)",
+                                   description="Ask your documents using langchain (RAG) pipeline through " \
+                                               "OpenAI's API.",
+                                   submit_fun=langchain_rag_answer,
+                                   theme=theme)
+    free_port = utils.get_free_port()
+    demo.launch(server_port=free_port)
